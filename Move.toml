@@ -1,0 +1,14 @@
+[package]
+name = "meson-contracts-rooch"
+version = "0.0.1"
+
+[dependencies]
+MoveStdlib = { git = "https://github.com/rooch-network/rooch.git", subdir = "moveos/moveos-stdlib/move-stdlib", rev = "main" }
+MoveosStdlib = { git = "https://github.com/rooch-network/rooch.git", subdir = "moveos/moveos-stdlib/moveos-stdlib", rev = "main" }
+RoochFramework = { git = "https://github.com/rooch-network/rooch.git", subdir = "crates/rooch-framework", rev = "main" }
+
+[addresses]
+Meson =  "0x745491a2938cf8c87ff8a9c3904e4219a9b8d18b3156766f5ede4abd713d920c"
+std =  "0x1"
+moveos_std =  "0x2"
+rooch_framework =  "0x3"
