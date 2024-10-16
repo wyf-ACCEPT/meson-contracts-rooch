@@ -1,11 +1,11 @@
 module Meson::MesonStates {
     use std::signer;
+    use moveos_std::timestamp::now_seconds;
     use moveos_std::account;
     use rooch_framework::coin_store;
     use moveos_std::object::Object;
     use rooch_framework::coin_store::CoinStore;
     use moveos_std::table;
-    use rooch_framework::timestamp;
     use moveos_std::type_info;
     use rooch_framework::coin::{Coin};
     use Meson::MesonHelpers;
@@ -26,6 +26,8 @@ module Meson::MesonStates {
 
     const ESWAP_NOT_EXISTS: u64 = 34;
     const ESWAP_ALREADY_EXISTS: u64 = 35;
+    const ESWAP_ALREADY_RELEASED: u64 = 36;
+
     const ESWAP_COIN_MISMATCH: u64 = 38;
     const ESWAP_BONDED_TO_OTHERS: u64 = 44;
 
@@ -60,7 +62,7 @@ module Meson::MesonStates {
 
     fun init_module(sender: &signer) {
         let sender_addr = signer::address_of(sender);
-        assert!(sender_addr == DEPLOYER, ENOT_DEPLOYER);
+        assert_is_deployer(sender_addr);
 
         let store = GeneralStore {
             supported_coins: table::new<u8, type_info::TypeInfo>(),
@@ -94,7 +96,7 @@ module Meson::MesonStates {
         coin_index: u8,
     ) {
         let sender_addr = signer::address_of(sender);
-        assert!(sender_addr == DEPLOYER, ENOT_DEPLOYER);
+        assert_is_deployer(sender_addr);
 
         let store = account::borrow_mut_resource<GeneralStore>(DEPLOYER);
         let supported_coins = &mut store.supported_coins;
@@ -108,6 +110,10 @@ module Meson::MesonStates {
             pending_coins: table::new<vector<u8>, Object<CoinStore<CoinType>>>(),
         };
         account::move_resource_to(sender, coin_store);
+    }
+
+    public(friend) fun assert_is_deployer(addr: address) {
+        assert!(addr == DEPLOYER, ENOT_DEPLOYER);
     }
 
     public(friend) fun coin_type_for_index(coin_index: u8): type_info::TypeInfo {
@@ -194,10 +200,10 @@ module Meson::MesonStates {
         };
     }
 
-    public(friend) fun coins_from_pool<CoinType: key + store>(pool_index: u64, amount: u256): Coin<CoinType> {
+    public(friend) fun coins_from_pool<CoinType: key + store>(pool_index: u64, amount: u64): Coin<CoinType> {
         let store = account::borrow_mut_resource<StoreForCoin<CoinType>>(DEPLOYER);
         let current_coins_store = table::borrow_mut(&mut store.in_pool_coins, pool_index);
-        coin_store::withdraw(current_coins_store, amount)
+        coin_store::withdraw(current_coins_store, (amount as u256))
     }
 
     public(friend) fun coins_to_pending<CoinType: key + store>(key: vector<u8>, coins: Coin<CoinType>) {
@@ -246,7 +252,7 @@ module Meson::MesonStates {
         // TODO: do we need to check contains?
         assert!(table::contains(posted_swaps, encoded_swap), ESWAP_NOT_EXISTS);
 
-        if (MesonHelpers::expire_ts_from(encoded_swap) < timestamp::now_seconds() + MesonHelpers::get_MIN_BOND_TIME_PERIOD()) {
+        if (MesonHelpers::expire_ts_from(encoded_swap) < now_seconds() + MesonHelpers::get_MIN_BOND_TIME_PERIOD()) {
             // The swap cannot be posted again and therefore safe to remove it.
             let PostedSwap { pool_index, initiator, from_address } = table::remove(posted_swaps, encoded_swap);
             assert!(from_address != @0x0, ESWAP_NOT_EXISTS);
@@ -278,23 +284,27 @@ module Meson::MesonStates {
         table::add(locked_swaps, swap_id, LockedSwap { pool_index, until, recipient });
     }
 
-    public(friend) fun remove_locked_swap(swap_id: vector<u8>): (u64, u64, address) {
+    public(friend) fun remove_locked_swap(swap_id: vector<u8>): (u64, u64) {
         let store = account::borrow_mut_resource<GeneralStore>(DEPLOYER);
         let locked_swaps = &mut store.locked_swaps;
 
         let locked = table::borrow(locked_swaps, swap_id);
-        assert!(locked.until != 0, ESWAP_NOT_EXISTS);
+        assert!(locked.until != 0, ESWAP_ALREADY_RELEASED);
         let pool_index = locked.pool_index;
         let until = locked.until;
-        let recipient = locked.recipient;
+        table::remove(locked_swaps, swap_id);
 
-        if (until > timestamp::now_seconds()) {
-            let locked_mut = table::borrow_mut(locked_swaps, swap_id);
-            locked_mut.until = 0;
-        } else {
-            table::remove(locked_swaps, swap_id);
-        };
+        (pool_index, until)
+    }
 
-        (pool_index, until, recipient)
+    public(friend) fun release_locked_swap(swap_id: vector<u8>): address {
+        let store = account::borrow_mut_resource<GeneralStore>(DEPLOYER);
+        let locked_swaps = &mut store.locked_swaps;
+
+        let locked_mut = table::borrow_mut(locked_swaps, swap_id);
+        assert!(locked_mut.until != 0, ESWAP_ALREADY_RELEASED);
+        locked_mut.until = 0;
+
+        locked_mut.recipient
     }
 }

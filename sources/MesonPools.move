@@ -5,8 +5,8 @@
 /// LP pool operations are also provided in this class.
 module Meson::MesonPools {
     use std::signer;
+    use moveos_std::timestamp::now_seconds;
     use rooch_framework::account_coin_store;
-    use rooch_framework::timestamp;
     use rooch_framework::coin;
     use Meson::MesonHelpers;
     use Meson::MesonStates;
@@ -17,26 +17,37 @@ module Meson::MesonPools {
     const ESWAP_EXIPRE_TS_IS_SOON: u64 = 46;
     const ESWAP_STILL_IN_LOCK: u64 = 47;
     const ESWAP_PASSED_LOCK_PERIOD: u64 = 48;
+    const ESWAP_EXPIRED: u64 = 49;
+
+    const E_DEPRECATED: u64 = 255;
 
 
     // Named consistently with solidity contracts
-    public entry fun depositAndRegister<CoinType: key + store>(sender: &signer, amount: u256, pool_index: u64) {
+    public entry fun withdrawServiceFee<CoinType: key + store>(sender: &signer, amount: u64, to_pool_index: u64) {
+        let sender_addr = signer::address_of(sender);
+        MesonStates::assert_is_deployer(sender_addr);
+
+        MesonStates::owner_of_pool(to_pool_index);
+        let coins = MesonStates::coins_from_pool<CoinType>(0, amount);
+        MesonStates::coins_to_pool<CoinType>(to_pool_index, coins);
+    }
+    public entry fun depositAndRegister<CoinType: key + store>(sender: &signer, amount: u64, pool_index: u64) {
         let sender_addr = signer::address_of(sender);
         MesonStates::register_pool_index(pool_index, sender_addr);
-        let coins = account_coin_store::withdraw<CoinType>(sender, amount);
+        let coins = account_coin_store::withdraw<CoinType>(sender, (amount as u256));
         MesonStates::coins_to_pool<CoinType>(pool_index, coins);
     }
 
     // Named consistently with solidity contracts
-    public entry fun deposit<CoinType: key + store>(sender: &signer, amount: u256, pool_index: u64) {
+    public entry fun deposit<CoinType: key + store>(sender: &signer, amount: u64, pool_index: u64) {
         let sender_addr = signer::address_of(sender);
         assert!(pool_index == MesonStates::pool_index_of(sender_addr), EPOOL_INDEX_MISMATCH);
-        let coins = account_coin_store::withdraw<CoinType>(sender, amount);
+        let coins = account_coin_store::withdraw<CoinType>(sender, (amount as u256));
         MesonStates::coins_to_pool<CoinType>(pool_index, coins);
     }
 
     // Named consistently with solidity contracts
-    public entry fun withdraw<CoinType: key + store>(sender: &signer, amount: u256, pool_index: u64) {
+    public entry fun withdraw<CoinType: key + store>(sender: &signer, amount: u64, pool_index: u64) {
         let sender_addr = signer::address_of(sender);
         assert!(pool_index == MesonStates::pool_index_if_owner(sender_addr), EPOOL_INDEX_MISMATCH);
         let coins = MesonStates::coins_from_pool<CoinType>(pool_index, amount);
@@ -66,10 +77,18 @@ module Meson::MesonPools {
 
 
     // Named consistently with solidity contracts
-    public entry fun lock<CoinType: key + store>(
+    public entry fun lock<CoinType>(
+        _sender: &signer,
+        _encoded_swap: vector<u8>,
+        _signature: vector<u8>,
+        _initiator: vector<u8>,
+        _recipient: address,
+    ) {
+        assert!(false, E_DEPRECATED);
+    }
+    public entry fun lockSwap<CoinType: key + store>(
         sender: &signer,
         encoded_swap: vector<u8>,
-        signature: vector<u8>, // must be signed by `initiator`
         initiator: vector<u8>, // an eth address of (20 bytes), the signer to sign for release
         recipient: address,
     ) {
@@ -78,21 +97,19 @@ module Meson::MesonPools {
         MesonStates::match_coin_type<CoinType>(MesonHelpers::out_coin_index_from(encoded_swap));
         MesonHelpers::is_eth_addr(initiator);
 
-        let until = timestamp::now_seconds() + MesonHelpers::get_LOCK_TIME_PERIOD();
+        let until = now_seconds() + MesonHelpers::get_LOCK_TIME_PERIOD();
         assert!(until < MesonHelpers::expire_ts_from(encoded_swap) - 300, ESWAP_EXIPRE_TS_IS_SOON);
 
         let pool_index = MesonStates::pool_index_of(signer::address_of(sender));
         assert!(pool_index != 0, EPOOL_INDEX_CANNOT_BE_ZERO);
 
-        MesonHelpers::check_request_signature(encoded_swap, signature, initiator);
-
         let swap_id = MesonHelpers::get_swap_id(encoded_swap, initiator);
         let amount = MesonHelpers::amount_from(encoded_swap) - MesonHelpers::fee_for_lp(encoded_swap);
 
-        let coins = MesonStates::coins_from_pool<CoinType>(pool_index, (amount as u256));
-        MesonStates::coins_to_pending<CoinType>(swap_id, coins);
-
         MesonStates::add_locked_swap(swap_id, pool_index, until, recipient);
+
+        let coins = MesonStates::coins_from_pool<CoinType>(pool_index, amount);
+        MesonStates::coins_to_pending<CoinType>(swap_id, coins);
     }
 
 
@@ -105,8 +122,8 @@ module Meson::MesonPools {
         MesonHelpers::is_eth_addr(initiator);
 
         let swap_id = MesonHelpers::get_swap_id(encoded_swap, initiator);
-        let (pool_index, until, _) = MesonStates::remove_locked_swap(swap_id);
-        assert!(until < timestamp::now_seconds(), ESWAP_STILL_IN_LOCK);
+        let (pool_index, until) = MesonStates::remove_locked_swap(swap_id);
+        assert!(until < now_seconds(), ESWAP_STILL_IN_LOCK);
 
         let coins = MesonStates::coins_from_pending<CoinType>(swap_id);
         MesonStates::coins_to_pool<CoinType>(pool_index, coins);
@@ -121,6 +138,7 @@ module Meson::MesonPools {
         initiator: vector<u8>,
     ) {
         MesonHelpers::is_eth_addr(initiator);
+        assert!(MesonHelpers::expire_ts_from(encoded_swap) > now_seconds(), ESWAP_EXPIRED);
 
         let waived = MesonHelpers::fee_waived(encoded_swap);
         if (waived) {
@@ -129,8 +147,8 @@ module Meson::MesonPools {
         }; // otherwise, signer could be anyone
 
         let swap_id = MesonHelpers::get_swap_id(encoded_swap, initiator);
-        let (_, until, recipient) = MesonStates::remove_locked_swap(swap_id);
-        assert!(until > timestamp::now_seconds(), ESWAP_PASSED_LOCK_PERIOD);
+        let recipient = MesonStates::release_locked_swap(swap_id);
+
 
         MesonHelpers::check_release_signature(
             encoded_swap,
@@ -141,6 +159,69 @@ module Meson::MesonPools {
 
         // Release to recipient
         let coins = MesonStates::coins_from_pending<CoinType>(swap_id);
+        if (!waived) {
+            let service_fee = coin::extract<CoinType>(&mut coins, (MesonHelpers::service_fee(encoded_swap) as u256));
+            MesonStates::coins_to_pool<CoinType>(0, service_fee);
+        };
+        account_coin_store::deposit<CoinType>(recipient, coins);
+    }
+
+    // Named consistently with solidity contracts
+    public entry fun directRelease<CoinType: key + store>(
+        sender: &signer,
+        encoded_swap: vector<u8>,
+        signature: vector<u8>,
+        initiator: vector<u8>,
+        recipient: address,
+    ) {
+        MesonHelpers::is_encoded_valid(encoded_swap);
+        MesonHelpers::for_target_chain(encoded_swap);
+        MesonStates::match_coin_type<CoinType>(MesonHelpers::out_coin_index_from(encoded_swap));
+        MesonHelpers::is_eth_addr(initiator);
+        assert!(MesonHelpers::expire_ts_from(encoded_swap) > now_seconds(), ESWAP_EXPIRED);
+
+        let waived = MesonHelpers::fee_waived(encoded_swap);
+        if (waived) {
+            MesonStates::assert_is_premium_manager(signer::address_of(sender));
+        };
+
+        let swap_id = MesonHelpers::get_swap_id(encoded_swap, initiator);
+        let pool_index = MesonStates::pool_index_of(signer::address_of(sender));
+        assert!(pool_index != 0, EPOOL_INDEX_CANNOT_BE_ZERO);
+        MesonStates::add_locked_swap(swap_id, pool_index, 0, recipient);
+
+        MesonHelpers::check_release_signature(
+            encoded_swap,
+            MesonHelpers::eth_address_from_rooch_address(recipient),
+            signature,
+            initiator
+        );
+
+        let amount = MesonHelpers::amount_from(encoded_swap) - MesonHelpers::fee_for_lp(encoded_swap);
+        let coins = MesonStates::coins_from_pool<CoinType>(pool_index, amount);
+        if (!waived) {
+            let service_fee = coin::extract<CoinType>(&mut coins, (MesonHelpers::service_fee(encoded_swap) as u256));
+            MesonStates::coins_to_pool<CoinType>(0, service_fee);
+        };
+        account_coin_store::deposit<CoinType>(recipient, coins);
+    }
+
+
+    // Named consistently with solidity contracts
+    public entry fun simpleRelease<CoinType: key + store>(
+        sender: &signer,
+        encoded_swap: vector<u8>,
+        recipient: address,
+    ) {
+        MesonHelpers::is_encoded_valid(encoded_swap);
+        MesonHelpers::for_target_chain(encoded_swap);
+        MesonStates::match_coin_type<CoinType>(MesonHelpers::out_coin_index_from(encoded_swap));
+        MesonStates::assert_is_premium_manager(signer::address_of(sender));
+
+        let amount = MesonHelpers::amount_from(encoded_swap) - MesonHelpers::fee_for_lp(encoded_swap);
+        let coins = MesonStates::coins_from_pool<CoinType>(1, amount);
+
+        let waived = MesonHelpers::fee_waived(encoded_swap);
         if (!waived) {
             let service_fee = coin::extract<CoinType>(&mut coins, (MesonHelpers::service_fee(encoded_swap) as u256));
             MesonStates::coins_to_pool<CoinType>(0, service_fee);

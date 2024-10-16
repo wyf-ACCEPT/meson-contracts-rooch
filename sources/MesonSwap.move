@@ -5,8 +5,8 @@
 module Meson::MesonSwap {
     use std::signer;
     use std::vector;
+    use moveos_std::timestamp::now_seconds;
     use rooch_framework::account_coin_store;
-    use rooch_framework::timestamp;
     use Meson::MesonHelpers;
     use Meson::MesonStates;
 
@@ -49,7 +49,7 @@ module Meson::MesonSwap {
         MesonHelpers::assert_amount_within_max(amount);
 
         // Assertion about time-lock.
-        let delta = MesonHelpers::expire_ts_from(encoded_swap) - timestamp::now_seconds();
+        let delta = MesonHelpers::expire_ts_from(encoded_swap) - now_seconds();
         assert!(delta > MesonHelpers::get_MIN_BOND_TIME_PERIOD(), ESWAP_EXPIRE_TOO_EARLY);
         assert!(delta < MesonHelpers::get_MAX_BOND_TIME_PERIOD(), ESWAP_EXPIRE_TOO_LATE);
 
@@ -77,7 +77,7 @@ module Meson::MesonSwap {
     // Named consistently with solidity contracts
     public entry fun cancelSwap<CoinType: key + store>(_sender: &signer, encoded_swap: vector<u8>) {
         let expire_ts = MesonHelpers::expire_ts_from(encoded_swap);
-        assert!(expire_ts < timestamp::now_seconds(), ESWAP_CANNOT_CANCEL_BEFORE_EXPIRE);
+        assert!(expire_ts < now_seconds(), ESWAP_CANNOT_CANCEL_BEFORE_EXPIRE);
 
         vector::push_back(&mut encoded_swap, 0xff); // so it cannot be identical to a swap_id
         let (_, _, from_address) = MesonStates::remove_posted_swap(encoded_swap);
