@@ -23,14 +23,6 @@ module Meson::MesonPools {
 
 
     // Named consistently with solidity contracts
-    public entry fun withdrawServiceFee<CoinType: key + store>(sender: &signer, amount: u64, to_pool_index: u64) {
-        let sender_addr = signer::address_of(sender);
-        MesonStates::assert_is_deployer(sender_addr);
-
-        MesonStates::owner_of_pool(to_pool_index);
-        let coins = MesonStates::coins_from_pool<CoinType>(0, amount);
-        MesonStates::coins_to_pool<CoinType>(to_pool_index, coins);
-    }
     public entry fun depositAndRegister<CoinType: key + store>(sender: &signer, amount: u64, pool_index: u64) {
         let sender_addr = signer::address_of(sender);
         MesonStates::register_pool_index(pool_index, sender_addr);
@@ -75,8 +67,17 @@ module Meson::MesonPools {
         MesonStates::transfer_pool_owner(pool_index, addr);
     }
 
-
     // Named consistently with solidity contracts
+    public entry fun withdrawServiceFee<CoinType: key + store>(sender: &signer, amount: u64, to_pool_index: u64) {
+        let sender_addr = signer::address_of(sender);
+        MesonStates::assert_is_deployer(sender_addr);
+
+        MesonStates::owner_of_pool(to_pool_index);
+        let coins = MesonStates::coins_from_pool<CoinType>(0, amount);
+        MesonStates::coins_to_pool<CoinType>(to_pool_index, coins);
+    }
+
+
     public entry fun lock<CoinType>(
         _sender: &signer,
         _encoded_swap: vector<u8>,
@@ -86,6 +87,9 @@ module Meson::MesonPools {
     ) {
         assert!(false, E_DEPRECATED);
     }
+
+
+    // Named consistently with solidity contracts
     public entry fun lockSwap<CoinType: key + store>(
         sender: &signer,
         encoded_swap: vector<u8>,

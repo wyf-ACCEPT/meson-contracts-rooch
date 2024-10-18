@@ -27,7 +27,6 @@ module Meson::MesonStates {
     const ESWAP_NOT_EXISTS: u64 = 34;
     const ESWAP_ALREADY_EXISTS: u64 = 35;
     const ESWAP_ALREADY_RELEASED: u64 = 36;
-
     const ESWAP_COIN_MISMATCH: u64 = 38;
     const ESWAP_BONDED_TO_OTHERS: u64 = 44;
 
@@ -292,6 +291,7 @@ module Meson::MesonStates {
         assert!(locked.until != 0, ESWAP_ALREADY_RELEASED);
         let pool_index = locked.pool_index;
         let until = locked.until;
+
         table::remove(locked_swaps, swap_id);
 
         (pool_index, until)
