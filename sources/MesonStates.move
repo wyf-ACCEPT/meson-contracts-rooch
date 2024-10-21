@@ -59,7 +59,7 @@ module Meson::MesonStates {
         recipient: address,
     }
 
-    fun init_module(sender: &signer) {
+    fun init(sender: &signer) {
         let sender_addr = signer::address_of(sender);
         assert_is_deployer(sender_addr);
 
