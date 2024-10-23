@@ -8,7 +8,7 @@ MoveosStdlib = { git = "https://github.com/rooch-network/rooch.git", subdir = "f
 RoochFramework = { git = "https://github.com/rooch-network/rooch.git", subdir = "frameworks/rooch-framework", rev = "main" }
 
 [addresses]
-Meson =  "_"
+Meson = "0x7bc31de9066a4d2a05bbda68ab2501fdc07af83dc4daecd9d5e03739d47c8df0"
 std =  "0x1"
 moveos_std =  "0x2"
 rooch_framework =  "0x3"
