@@ -1,4 +1,6 @@
-const { getRoochNodeUrl, RoochClient, Secp256k1Keypair } = require("@roochnetwork/rooch-sdk")
+const { getRoochNodeUrl, RoochClient, bcs } = require("@roochnetwork/rooch-sdk")
+const { sha3_256 } = require('js-sha3')
+
 require('dotenv').config()
 
 const main = async () => {
@@ -6,41 +8,48 @@ const main = async () => {
     url: getRoochNodeUrl('testnet'),
   })
 
-  const generalStoreType = '0x7bc31de9066a4d2a05bbda68ab2501fdc07af83dc4daecd9d5e03739d47c8df0::MesonStates::GeneralStore'
+  const generalStoreType = `${process.env.HEX_ADDRESS}::MesonStates::GeneralStore`
 
-  const b1 = await client.getBalance({
-    owner: 'rooch12tu82p9ld5487s3uuuue3ffn88yeq2m0dzqex9ujxufcwq0yxpjsstd3qt',
+  const balanceResult = await client.getBalance({
+    owner: process.env.ADDRESS,
     coinType: '0x3::gas_coin::RGas',
   })
-  console.log(b1.balance / 1e8)
+  console.log(`Balance: ${balanceResult.balance / 1e8} $ROOCH`)
 
-  const b2 = await client.queryObjectStates({
+  const objects = await client.queryObjectStates({
     // filter: { object_id: '' }
-    filter: { owner: 'rooch100p3m6gxdfxj5pdmmf52kfgplhq847pacndwekw4uqmnn4ru3hcqu2vfaf' }
+    filter: { owner: process.env.ADDRESS },
   })
-  console.log(b2.data.length)
+  console.log(`Objects: ${objects.data.length}`)
 
-  const b3 = await client.getStates({
-    accessPath: '/resource/0x7bc31de9066a4d2a05bbda68ab2501fdc07af83dc4daecd9d5e03739d47c8df0/' + generalStoreType,
+  const generalStore = await client.getStates({
+    accessPath: `/resource/${process.env.HEX_ADDRESS}/${generalStoreType}`,
     stateOption: { decode: true },
   })
-  // console.log(b3[0].decoded_value.value.value)
 
-  const d = b3[0].decoded_value.value.value.value
-  console.log(d.pool_owners.value.handle.value.id)
+  const tableInfo = {}
+  for (const [k, v] of Object.entries(generalStore[0].decoded_value.value.value.value)) {
+    tableInfo[k] = v.value.handle.value.id
+  }
+  console.log(`Table Info: ${JSON.stringify(tableInfo)}`)
 
-  const b4 = await client.queryObjectStates({
-    // filter: { object_id: '0xbd087e45f4b2f922e595b68ff3809e4231b5b1f11610e7c2c6c0736dfd0b1641' }, // Pool Owners
-    filter: { object_id: '0x4b3bb2e8a252a147c700f356c718ea64215632e6f832629fef1727b03e663b1b' },    // Supported Coins
-  })
-  console.log(b4)
+  const encoder = new TextEncoder()
+  const encodedU8 = encoder.encode('u8')
+  const tokenIndex = 34   // u8 type
+  const serializedTokenIndex = bcs.u8().serialize(tokenIndex).toBytes()
+  const concatenatedArray = new Uint8Array([...serializedTokenIndex, ...encodedU8])
+  const key = '0x' + sha3_256(concatenatedArray)
 
-  // const keypair = Secp256k1Keypair.deriveKeypair(process.env.MNEMONIC)
-  // console.log(keypair)
+  // // const keypair = Secp256k1Keypair.deriveKeypair(process.env.MNEMONIC)
+  // // console.log(keypair)
 
+
+  console.log(`/fields/${tableInfo.supported_coins}/${key}`)
   const b5 = await client.getStates({
-    accessPath: '/table/table_handle/0x4b3bb2e8a252a147c700f356c718ea64215632e6f832629fef1727b03e663b1b'
+    accessPath: `/fields/${tableInfo.supported_coins}/${key}`,
+    stateOption: { decode: true },
   })
+  console.log(b5[0].decoded_value.value)
 
 
 }
