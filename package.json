@@ -2,6 +2,7 @@
   "dependencies": {
     "@roochnetwork/rooch-sdk": "^0.2.7",
     "dotenv": "^16.4.5",
+    "ethers": "^6.13.4",
     "js-sha3": "^0.9.3"
   }
 }
